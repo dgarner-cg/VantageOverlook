@@ -109,7 +109,8 @@ class Trade(commands.Cog):
         rarity = rarity.lower() 
         
         async with self.database.member(member).give() as give:
-            give[rarity].remove(card)
+            if card in give[rarity]:
+                give[rarity].remove(card)
             
     async def cardInWant(self, member, card):
         rarity = await self.cardToRarity(card)
@@ -191,7 +192,6 @@ class Trade(commands.Cog):
                 continue
             except IndexError:
                 clan = None
-                author_clan = None
                 
             if author_clan == clan:
                 token_trades[player] = trades[player]
@@ -334,11 +334,11 @@ class Trade(commands.Cog):
                 pass
                 
         if len(givers) > 1024:
-            givers = givers[:1000 - len(givers)] + "..."
+            givers = givers[:1021] + "..."
         embed.add_field(name="Giving {}".format(card), value=givers + "\n\u200b", inline=False)
 
         if len(wanters) > 1024:
-            wanters = wanters[:1000 - len(wanters)] + "..."
+            wanters = wanters[:1021] + "..."
         embed.add_field(name="Want {}".format(card), value=wanters + "\n\u200b", inline=False)
 
         await ctx.send(embed=embed)                 
@@ -351,11 +351,11 @@ class Trade(commands.Cog):
     @trade_token.command(name="add")    
     async def token_add(self, ctx, token):
         """Add trade token"""
+        token = token.lower()
         
         if token in token_type:
             
             author = ctx.message.author
-            token = token.lower()
         
             try:
                 await self.saveToken(author, token)
@@ -369,10 +369,10 @@ class Trade(commands.Cog):
     @trade_token.command(name="remove")
     async def token_remove(self, ctx, token):
         """Remove trade token"""
+        token = token.lower()
         
         if token in token_type:
             author = ctx.message.author
-            token = token.lower()
         
             try:
                 await self.removeToken(author, token)
@@ -414,10 +414,10 @@ class Trade(commands.Cog):
                 cards_give += "• " + chat_formatting.humanize_list(member_data['give'][rarity]) + "\n"
 
         if len(cards_give) > 1024:
-            cards_give = cards_give[:1000 - len(cards_give)] + "..."
+            cards_give = cards_give[:1021] + "..."
             
         if len(cards_want) > 1024:
-            cards_want = cards_want[:1000 - len(cards_want)] + "..."
+            cards_want = cards_want[:1021] + "..."
                                    
         embed.add_field(name="Token : ", value=token + "\n\u200b", inline=False)
         embed.add_field(name="Want : ", value=cards_want + "\n\u200b", inline=False)
