@@ -212,14 +212,13 @@ KEY `idx_tag` (`tag`)
         if not userIDs:
             return tagsByUser
 
-        placeholders = ",".join(["%s"] * len(userIDs))
-        query = f"SELECT user_id, tag FROM tags WHERE user_id IN ({placeholders})"
-
         cursor = self.getCursor()
-        cursor.execute(query, tuple(int(user_id) for user_id in userIDs))
-        for row in cursor.fetchall():
-            tagsByUser.setdefault(row[0], [])
-            tagsByUser[row[0]].append(row[1])
+        query = "SELECT user_id, tag FROM tags WHERE user_id = %s"
+        for user_id in userIDs:
+            cursor.execute(query, (int(user_id),))
+            for row in cursor.fetchall():
+                tagsByUser.setdefault(row[0], [])
+                tagsByUser[row[0]].append(row[1])
         return tagsByUser
 
     def quickGetAllTags(self, userID):
