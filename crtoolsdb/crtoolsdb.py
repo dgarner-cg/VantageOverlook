@@ -135,7 +135,7 @@ class Tags:
     def setupDB(self):
         cursor = self.getCursor()
 
-        query = f"""CREATE TABLE IF NOT EXISTS `tags` (
+        query = """CREATE TABLE IF NOT EXISTS `tags` (
 `id` int(11) NOT NULL AUTO_INCREMENT,
 `user_id` bigint(20) NOT NULL,
 `tag` varchar(15) NOT NULL,
@@ -188,8 +188,8 @@ KEY `idx_tag` (`tag`)
         if self.accountCount(userID) < account or account < 1:
             return None
 
-        query = f"SELECT tag FROM tags WHERE user_id = {userID} AND account = {account}"
-        cursor.execute(query)
+        query = "SELECT tag FROM tags WHERE user_id = %s AND account = %s"
+        cursor.execute(query, (int(userID), int(account)))
         return cursor.fetchone()[0]
 
     def accountCount(self, userID):
@@ -202,18 +202,21 @@ KEY `idx_tag` (`tag`)
         2+ - Main Account Saved + Some amount of alts (-1 to get the amount)
         """
         cursor = self.getCursor()
-        query = f"SELECT id from tags WHERE user_id = {userID}"
-        cursor.execute(query)
+        query = "SELECT id from tags WHERE user_id = %s"
+        cursor.execute(query, (int(userID),))
         return len(cursor.fetchall())
 
     def getTagsForUsers(self, userIDs):
         tagsByUser = {}
 
-        userString = ",".join([str(userID) for userID in userIDs])
-        query = f"SELECT user_id, tag FROM tags WHERE user_id IN ({userString})"
+        if not userIDs:
+            return tagsByUser
+
+        placeholders = ",".join(["%s"] * len(userIDs))
+        query = f"SELECT user_id, tag FROM tags WHERE user_id IN ({placeholders})"
 
         cursor = self.getCursor()
-        cursor.execute(query)
+        cursor.execute(query, tuple(int(user_id) for user_id in userIDs))
         for row in cursor.fetchall():
             tagsByUser.setdefault(row[0], [])
             tagsByUser[row[0]].append(row[1])
@@ -222,9 +225,9 @@ KEY `idx_tag` (`tag`)
     def quickGetAllTags(self, userID):
         tags = []
 
-        query = f"SELECT tag FROM tags WHERE user_id = {userID}"
+        query = "SELECT tag FROM tags WHERE user_id = %s"
         cursor = self.getCursor()
-        cursor.execute(query)
+        cursor.execute(query, (int(userID),))
         for row in cursor.fetchall():
             tags.append(row[0])
         return tags
@@ -264,8 +267,8 @@ KEY `idx_tag` (`tag`)
 
         account = count + 1
 
-        query = f"INSERT INTO tags (user_id, tag, account) VALUES ({userID}, '{tag}', {account})"
-        cursor.execute(query)
+        query = "INSERT INTO tags (user_id, tag, account) VALUES (%s, %s, %s)"
+        cursor.execute(query, (int(userID), tag, int(account)))
 
         return account
 
@@ -295,12 +298,12 @@ KEY `idx_tag` (`tag`)
         count = self.accountCount(userID)
 
         # Removes the tag and shifts the others if needed
-        query = f"DELETE FROM tags WHERE user_id = {userID} AND account = {account}"
-        cursor.execute(query)
+        query = "DELETE FROM tags WHERE user_id = %s AND account = %s"
+        cursor.execute(query, (int(userID), int(account)))
 
         for item in range(account, count):
-            query = f"UPDATE tags SET account = {item} WHERE user_id = {userID} AND account = {item + 1}"
-            cursor.execute(query)
+            query = "UPDATE tags SET account = %s WHERE user_id = %s AND account = %s"
+            cursor.execute(query, (int(item), int(userID), int(item + 1)))
 
     def switchPlace(self, userID, account1, account2):
         """Switch the place of account 1 with 2"""
@@ -312,12 +315,12 @@ KEY `idx_tag` (`tag`)
         if (account1 > count or account1 < 1) or (account2 > count or account2 < 1):
             raise InvalidArgument
 
-        querya = f"UPDATE tags SET account = 0 WHERE user_id = {userID} and account = {account1}"
-        queryb = f"UPDATE tags SET account = {account1} WHERE user_id = {userID} and account = {account2}"
-        queryc = f"UPDATE tags SET account = {account2} WHERE user_id = {userID} and account = 0"
-        cursor.execute(querya)
-        cursor.execute(queryb)
-        cursor.execute(queryc)
+        querya = "UPDATE tags SET account = 0 WHERE user_id = %s and account = %s"
+        queryb = "UPDATE tags SET account = %s WHERE user_id = %s and account = %s"
+        queryc = "UPDATE tags SET account = %s WHERE user_id = %s and account = 0"
+        cursor.execute(querya, (int(userID), int(account1)))
+        cursor.execute(queryb, (int(account1), int(userID), int(account2)))
+        cursor.execute(queryc, (int(account2), int(userID)))
 
     def getUser(self, tag):
         """Get all users that have this tag, returns dict in list
@@ -333,8 +336,8 @@ KEY `idx_tag` (`tag`)
         if not self.verifyTag(tag):
             raise InvalidTag
 
-        query = f"SELECT user_id, account FROM tags WHERE tag = '{tag}'"
-        cursor.execute(query)
+        query = "SELECT user_id, account FROM tags WHERE tag = %s"
+        cursor.execute(query, (tag,))
 
         return cursor.fetchall()
 
@@ -344,8 +347,8 @@ KEY `idx_tag` (`tag`)
             raise MainAlreadySaved
 
         cursor = self.getCursor()
-        query = f"UPDATE tags SET user_id = {newUserID} WHERE user_id = {oldUserID}"
-        cursor.execute(query)
+        query = "UPDATE tags SET user_id = %s WHERE user_id = %s"
+        cursor.execute(query, (int(newUserID), int(oldUserID)))
 
 
 class ClashRoyaleTools(commands.Cog):
@@ -388,9 +391,11 @@ class ClashRoyaleTools(commands.Cog):
     def cog_unload(self):
         if self.token_task:
             self.token_task.cancel()
-        self.bot.loop.create_task(self.cr.close())
+        if hasattr(self, "cr"):
+            self.bot.loop.create_task(self.cr.close())
         print('Unloaded CR-Tools... NOTE MANY DEPENDANCIES WILL BREAK INCLUDING TRADING, CLASHROYALESTATS AND CLASHROYALECLANS')
-        self.tags.db.close()
+        if hasattr(self, "tags") and getattr(self.tags, "db", None):
+            self.tags.db.close()
 
     @commands.group(name='crtools')
     async def _crtools(self, ctx):
@@ -532,7 +537,7 @@ class ClashRoyaleTools(commands.Cog):
         """Fetches a list of people that have this account saved"""
         try:
             users = self.tags.getUser(tag)
-            if users is None:
+            if not users:
                 return await ctx.send("This account isn't linked to any discord account")
             send = 'Users with this account: (Discord Account | Account Number) \n'
 
