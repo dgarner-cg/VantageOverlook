@@ -49,6 +49,13 @@ class Warnings(commands.Cog):
         self.bot = bot
         self.registration_task = self.bot.loop.create_task(self.register_warningtype())
 
+    async def _require_modplus(self, ctx: commands.Context):
+        modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            await ctx.send(_("The ModPlus cog must be loaded to use this command."))
+            return None
+        return modplus
+
     async def red_delete_data_for_user(
         self,
         *,
@@ -303,7 +310,9 @@ class Warnings(commands.Cog):
     # @checks.admin_or_permissions(ban_members=True)
     async def reasonlist(self, ctx: commands.Context):
         """List all configured reasons for Warnings."""
-        modplus = ctx.bot.get_cog("ModPlus")
+        modplus = await self._require_modplus(ctx)
+        if modplus is None:
+            return
         if not await modplus.action_check(ctx, "warn"):
             return
         guild = ctx.guild
@@ -334,7 +343,9 @@ class Warnings(commands.Cog):
     # @checks.admin_or_permissions(ban_members=True)
     async def actionlist(self, ctx: commands.Context):
         """List all configured automated actions for Warnings."""
-        modplus = ctx.bot.get_cog("ModPlus")
+        modplus = await self._require_modplus(ctx)
+        if modplus is None:
+            return
         if not await modplus.action_check(ctx, "warn"):
             return
         guild = ctx.guild
@@ -382,7 +393,9 @@ class Warnings(commands.Cog):
         `<reason>` can be a registered reason if it exists or a custom one
         is created by default.
         """
-        modplus = ctx.bot.get_cog("ModPlus")
+        modplus = await self._require_modplus(ctx)
+        if modplus is None:
+            return
         if not await modplus.action_check(ctx, "warn"):
             return
         guild = ctx.guild
@@ -530,7 +543,9 @@ class Warnings(commands.Cog):
     # @checks.admin()
     async def warnings(self, ctx: commands.Context, user: Union[discord.Member, int]):
         """List the warnings for the specified user."""
-        modplus = ctx.bot.get_cog("ModPlus")
+        modplus = await self._require_modplus(ctx)
+        if modplus is None:
+            return
         if not await modplus.action_check(ctx, "warn"):
             return
         try:
@@ -613,7 +628,9 @@ class Warnings(commands.Cog):
         reason: str = None,
     ):
         """Remove a warning from a user."""
-        modplus = ctx.bot.get_cog("ModPlus")
+        modplus = await self._require_modplus(ctx)
+        if modplus is None:
+            return
         if not await modplus.action_check(ctx, "warn"):
             return
 
@@ -632,7 +649,6 @@ class Warnings(commands.Cog):
 
         member_settings = self.config.member(member)
         current_point_count = await member_settings.total_points()
-        await warning_points_remove_check(self.config, ctx, member, current_point_count)
         async with member_settings.warnings() as user_warnings:
             if warn_id not in user_warnings.keys():
                 return await ctx.send(_("That warning doesn't exist!"))
@@ -640,6 +656,7 @@ class Warnings(commands.Cog):
                 current_point_count -= user_warnings[warn_id]["points"]
                 await member_settings.total_points.set(current_point_count)
                 user_warnings.pop(warn_id)
+        await warning_points_remove_check(self.config, ctx, member, current_point_count)
         await modlog.create_case(
             self.bot,
             ctx.guild,
