@@ -9,7 +9,7 @@ from typing import Optional
 import discord
 from redbot.core import Config, commands
 
-from .codes import internal_error_code
+from .codes import next_internal_error_code
 from .models import ErrorKind, InternalErrorRecord
 from .utils import command_display, internal_error_embed
 
@@ -36,21 +36,22 @@ class ErrorReporter:
         channel_id: Optional[int] = None,
         user_id: Optional[int] = None,
     ) -> str:
-        code = internal_error_code(system, kind)
-        record = InternalErrorRecord(
-            code=code,
-            system=system,
-            kind=kind.value,
-            command_name=command_name,
-            location=location,
-            summary=summary,
-            guild_id=guild_id,
-            channel_id=channel_id,
-            user_id=user_id,
-            created_at=time.time(),
-            traceback_text=traceback_text,
-        )
         async with self.config.internal_errors() as entries:
+            existing_codes = [entry.get("code") for entry in entries if isinstance(entry, dict)]
+            code = next_internal_error_code(existing_codes)
+            record = InternalErrorRecord(
+                code=code,
+                system=system,
+                kind=kind.value,
+                command_name=command_name,
+                location=location,
+                summary=summary,
+                guild_id=guild_id,
+                channel_id=channel_id,
+                user_id=user_id,
+                created_at=time.time(),
+                traceback_text=traceback_text,
+            )
             entries.insert(0, asdict(record))
             max_entries = await self.config.max_internal_errors()
             del entries[max_entries:]
