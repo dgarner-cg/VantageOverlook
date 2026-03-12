@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import discord
 from redbot.core import checks, commands
-from redbot.core.utils.chat_formatting import box, humanize_list, humanize_timedelta
+from redbot.core.utils.chat_formatting import humanize_list, humanize_timedelta
 
 from .base import VModBase
 from .constants import ACTION_KEYS, PERM_SYS_INFO, _
@@ -28,36 +28,48 @@ class VModSettings(VModBase):
         snapshot = await self.build_settings_snapshot(ctx.guild)
         mention_spam = snapshot["mention_spam"]
 
-        msg = _(
-            "Delete repeats: {delete_repeats}\n"
-            "Mention spam warn: {warn}\n"
-            "Mention spam kick: {kick}\n"
-            "Mention spam ban: {ban}\n"
-            "Mention spam strict: {strict}\n"
-            "Respects hierarchy: {hierarchy}\n"
-            "Reinvite on unban: {reinvite}\n"
-            "DM on kick/ban: {dm_on_action}\n"
-            "Default days deleted on ban: {default_days}\n"
-            "Default tempban duration: {default_tempban_duration}\n"
-            "Track nicknames: {track_nicknames}"
-        ).format(
-            delete_repeats=(
-                _("after {num} repeats").format(num=snapshot["delete_repeats"])
-                if snapshot["delete_repeats"] != -1
-                else _("Disabled")
-            ),
-            warn=mention_spam["warn"] or _("Disabled"),
-            kick=mention_spam["kick"] or _("Disabled"),
-            ban=mention_spam["ban"] or _("Disabled"),
-            strict=_("Yes") if mention_spam["strict"] else _("No"),
-            hierarchy=_("Yes") if snapshot["respect_hierarchy"] else _("No"),
-            reinvite=_("Yes") if snapshot["reinvite_on_unban"] else _("No"),
-            dm_on_action=_("Yes") if snapshot["dm_on_kickban"] else _("No"),
-            default_days=snapshot["default_days"],
-            default_tempban_duration=humanize_timedelta(seconds=snapshot["default_tempban_duration"]),
-            track_nicknames=_("Yes") if snapshot["track_nicknames"] else _("No"),
+        repeat_text = (
+            _("After {num} identical messages").format(num=snapshot["delete_repeats"])
+            if snapshot["delete_repeats"] != -1
+            else _("Disabled")
         )
-        await ctx.send(box(msg))
+
+        embed = discord.Embed(
+            title=f"⚙️ VMod Settings — {ctx.guild.name}",
+            color=discord.Color.blurple(),
+        )
+        embed.add_field(
+            name="🛡️ Moderation",
+            value=(
+                f"Hierarchy checks: **{'✅ On' if snapshot['respect_hierarchy'] else '❌ Off'}**\n"
+                f"DM before action: **{'✅ On' if snapshot['dm_on_kickban'] else '❌ Off'}**\n"
+                f"Reinvite on unban: **{'✅ On' if snapshot['reinvite_on_unban'] else '❌ Off'}**\n"
+                f"Track nicknames: **{'✅ On' if snapshot['track_nicknames'] else '❌ Off'}**"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="📋 Defaults",
+            value=(
+                f"Ban delete days: **{snapshot['default_days']}**\n"
+                f"Tempban duration: **{humanize_timedelta(seconds=snapshot['default_tempban_duration'])}**\n"
+                f"Delete repeats: **{repeat_text}**"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="⚠️ Mention Spam",
+            value=(
+                f"Warn: **{mention_spam['warn'] or _('Disabled')}**\n"
+                f"Kick: **{mention_spam['kick'] or _('Disabled')}**\n"
+                f"Ban: **{mention_spam['ban'] or _('Disabled')}**\n"
+                f"Strict: **{'✅ Yes' if mention_spam['strict'] else '❌ No'}**"
+            ),
+            inline=False,
+        )
+        if ctx.me:
+            embed.set_author(name=ctx.me.display_name, icon_url=ctx.me.display_avatar.url)
+        await ctx.send(embed=embed)
 
     @vmodset.command(name="panel", aliases=["dashboard", "ui"])
     @commands.bot_has_permissions(embed_links=True)
@@ -158,15 +170,19 @@ class VModSettings(VModBase):
     async def mentionspam_show(self, ctx: commands.Context) -> None:
         """Show the current mention-spam thresholds."""
         mention_spam = await self.config.guild(ctx.guild).mention_spam.all()
-        text = _(
-            "Warn: {warn}\nKick: {kick}\nBan: {ban}\nStrict counting: {strict}"
-        ).format(
-            warn=mention_spam["warn"] or _("Disabled"),
-            kick=mention_spam["kick"] or _("Disabled"),
-            ban=mention_spam["ban"] or _("Disabled"),
-            strict=_("Yes") if mention_spam["strict"] else _("No"),
+        embed = discord.Embed(
+            title="⚠️ Mention Spam Thresholds",
+            color=discord.Color.orange(),
         )
-        await ctx.send(box(text))
+        embed.add_field(name="Warn", value=str(mention_spam["warn"] or _("Disabled")), inline=True)
+        embed.add_field(name="Kick", value=str(mention_spam["kick"] or _("Disabled")), inline=True)
+        embed.add_field(name="Ban", value=str(mention_spam["ban"] or _("Disabled")), inline=True)
+        embed.add_field(
+            name="Strict counting",
+            value="✅ Yes — duplicate mentions count" if mention_spam["strict"] else "❌ No — only unique mentions count",
+            inline=False,
+        )
+        await ctx.send(embed=embed)
 
     @mentionspam.command(name="strict")
     async def mentionspam_strict(self, ctx: commands.Context, enabled: bool | None = None) -> None:
@@ -280,15 +296,19 @@ class VModSettings(VModBase):
             )
             return
 
-        lines = []
+        embed = discord.Embed(title="🔑 VMod Action Permissions", color=discord.Color.blurple())
         for action_key in ACTION_KEYS:
             roles = [
                 ctx.guild.get_role(role_id).mention
                 for role_id in action_roles[action_key]
                 if ctx.guild.get_role(role_id)
             ]
-            lines.append(f"{action_key}: {humanize_list(roles) if roles else 'none'}")
-        await ctx.send(box("\n".join(lines)))
+            embed.add_field(
+                name=f"`{action_key}`",
+                value=humanize_list(roles) if roles else "*(none)*",
+                inline=True,
+            )
+        await ctx.send(embed=embed)
 
     @vmodset.group(name="ratelimit", aliases=["ratelimits"])
     async def ratelimit(self, ctx: commands.Context) -> None:
@@ -298,12 +318,14 @@ class VModSettings(VModBase):
     async def ratelimit_show(self, ctx: commands.Context) -> None:
         """Show configured action rate limits."""
         limits = await self.config.guild(ctx.guild).action_rate_limits()
-        lines = []
+        embed = discord.Embed(title="⏱️ VMod Rate Limits", color=discord.Color.blurple())
         for action_key, data in limits.items():
-            lines.append(
-                f"{action_key}: {data['limit']} actions per {humanize_timedelta(seconds=int(data['window']))}"
+            embed.add_field(
+                name=f"`{action_key}`",
+                value=f"{data['limit']} action{'s' if data['limit'] != 1 else ''} per {humanize_timedelta(seconds=int(data['window']))}",
+                inline=True,
             )
-        await ctx.send(box("\n".join(lines)))
+        await ctx.send(embed=embed)
 
     @ratelimit.command(name="set")
     async def ratelimit_set(self, ctx: commands.Context, key: str, limit: int, window_seconds: int) -> None:
