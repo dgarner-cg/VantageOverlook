@@ -23,6 +23,7 @@ class VModSettings(VModBase):
         """Configure VMod."""
 
     @vmodset.command(name="show", aliases=["status"])
+    @commands.bot_has_permissions(embed_links=True)
     async def vmodset_show(self, ctx: commands.Context) -> None:
         """Show the most important VMod settings for the current server."""
         snapshot = await self.build_settings_snapshot(ctx.guild)
@@ -33,42 +34,45 @@ class VModSettings(VModBase):
             if snapshot["delete_repeats"] != -1
             else _("Disabled")
         )
+        on = _("✅ On")
+        off = _("❌ Off")
+        yes = _("✅ Yes")
+        no = _("❌ No")
 
         embed = discord.Embed(
-            title=f"⚙️ VMod Settings — {ctx.guild.name}",
+            title=_("⚙️ VMod Settings — {guild}").format(guild=ctx.guild.name),
             color=discord.Color.blurple(),
         )
         embed.add_field(
-            name="🛡️ Moderation",
+            name=_("🛡️ Moderation"),
             value=(
-                f"Hierarchy checks: **{'✅ On' if snapshot['respect_hierarchy'] else '❌ Off'}**\n"
-                f"DM before action: **{'✅ On' if snapshot['dm_on_kickban'] else '❌ Off'}**\n"
-                f"Reinvite on unban: **{'✅ On' if snapshot['reinvite_on_unban'] else '❌ Off'}**\n"
-                f"Track nicknames: **{'✅ On' if snapshot['track_nicknames'] else '❌ Off'}**"
+                f"{_('Hierarchy checks')}: **{on if snapshot['respect_hierarchy'] else off}**\n"
+                f"{_('DM before kick/ban')}: **{on if snapshot['dm_on_kickban'] else off}**\n"
+                f"{_('Reinvite on unban')}: **{on if snapshot['reinvite_on_unban'] else off}**\n"
+                f"{_('Track nicknames')}: **{on if snapshot['track_nicknames'] else off}**"
             ),
             inline=True,
         )
         embed.add_field(
-            name="📋 Defaults",
+            name=_("📋 Defaults"),
             value=(
-                f"Ban delete days: **{snapshot['default_days']}**\n"
-                f"Tempban duration: **{humanize_timedelta(seconds=snapshot['default_tempban_duration'])}**\n"
-                f"Delete repeats: **{repeat_text}**"
+                f"{_('Ban delete days')}: **{snapshot['default_days']}**\n"
+                f"{_('Tempban duration')}: **{humanize_timedelta(seconds=snapshot['default_tempban_duration'])}**\n"
+                f"{_('Delete repeats')}: **{repeat_text}**"
             ),
             inline=True,
         )
         embed.add_field(
-            name="⚠️ Mention Spam",
+            name=_("⚠️ Mention Spam"),
             value=(
-                f"Warn: **{mention_spam['warn'] or _('Disabled')}**\n"
-                f"Kick: **{mention_spam['kick'] or _('Disabled')}**\n"
-                f"Ban: **{mention_spam['ban'] or _('Disabled')}**\n"
-                f"Strict: **{'✅ Yes' if mention_spam['strict'] else '❌ No'}**"
+                f"{_('Warn')}: **{mention_spam['warn'] or _('Disabled')}**\n"
+                f"{_('Kick')}: **{mention_spam['kick'] or _('Disabled')}**\n"
+                f"{_('Ban')}: **{mention_spam['ban'] or _('Disabled')}**\n"
+                f"{_('Strict')}: **{yes if mention_spam['strict'] else no}**"
             ),
             inline=False,
         )
-        if ctx.me:
-            embed.set_author(name=ctx.me.display_name, icon_url=ctx.me.display_avatar.url)
+        embed.set_author(name=ctx.me.display_name, icon_url=ctx.me.display_avatar.url)
         await ctx.send(embed=embed)
 
     @vmodset.command(name="panel", aliases=["dashboard", "ui"])
@@ -167,21 +171,26 @@ class VModSettings(VModBase):
         """Configure mention-spam moderation thresholds."""
 
     @mentionspam.command(name="show")
+    @commands.bot_has_permissions(embed_links=True)
     async def mentionspam_show(self, ctx: commands.Context) -> None:
         """Show the current mention-spam thresholds."""
         mention_spam = await self.config.guild(ctx.guild).mention_spam.all()
+        warn_value = str(mention_spam["warn"] or _("Disabled"))
+        kick_value = str(mention_spam["kick"] or _("Disabled"))
+        ban_value = str(mention_spam["ban"] or _("Disabled"))
+        strict_text = (
+            _("✅ Yes — duplicate mentions count")
+            if mention_spam["strict"]
+            else _("❌ No — only unique mentions count")
+        )
         embed = discord.Embed(
-            title="⚠️ Mention Spam Thresholds",
+            title=_("⚠️ Mention Spam Thresholds"),
             color=discord.Color.orange(),
         )
-        embed.add_field(name="Warn", value=str(mention_spam["warn"] or _("Disabled")), inline=True)
-        embed.add_field(name="Kick", value=str(mention_spam["kick"] or _("Disabled")), inline=True)
-        embed.add_field(name="Ban", value=str(mention_spam["ban"] or _("Disabled")), inline=True)
-        embed.add_field(
-            name="Strict counting",
-            value="✅ Yes — duplicate mentions count" if mention_spam["strict"] else "❌ No — only unique mentions count",
-            inline=False,
-        )
+        embed.add_field(name=_("Warn"), value=warn_value, inline=True)
+        embed.add_field(name=_("Kick"), value=kick_value, inline=True)
+        embed.add_field(name=_("Ban"), value=ban_value, inline=True)
+        embed.add_field(name=_("Strict counting"), value=strict_text, inline=False)
         await ctx.send(embed=embed)
 
     @mentionspam.command(name="strict")
@@ -296,33 +305,49 @@ class VModSettings(VModBase):
             )
             return
 
-        embed = discord.Embed(title="🔑 VMod Action Permissions", color=discord.Color.blurple())
-        for action_key in ACTION_KEYS:
-            roles = [
-                ctx.guild.get_role(role_id).mention
-                for role_id in action_roles[action_key]
-                if ctx.guild.get_role(role_id)
-            ]
-            embed.add_field(
-                name=f"`{action_key}`",
-                value=humanize_list(roles) if roles else "*(none)*",
-                inline=True,
-            )
-        await ctx.send(embed=embed)
+        if ctx.channel.permissions_for(ctx.me).embed_links:
+            embed = discord.Embed(title=_("🔑 VMod Action Permissions"), color=discord.Color.blurple())
+            for action_key in ACTION_KEYS:
+                roles = [
+                    ctx.guild.get_role(role_id).mention
+                    for role_id in action_roles[action_key]
+                    if ctx.guild.get_role(role_id)
+                ]
+                embed.add_field(
+                    name=f"`{action_key}`",
+                    value=humanize_list(roles) if roles else _("*(none)*"),
+                    inline=True,
+                )
+            await ctx.send(embed=embed)
+        else:
+            lines = []
+            for action_key in ACTION_KEYS:
+                roles = [
+                    ctx.guild.get_role(role_id).mention
+                    for role_id in action_roles[action_key]
+                    if ctx.guild.get_role(role_id)
+                ]
+                lines.append(f"`{action_key}`: {humanize_list(roles) if roles else _('none')}")
+            await ctx.send("\n".join(lines))
 
     @vmodset.group(name="ratelimit", aliases=["ratelimits"])
     async def ratelimit(self, ctx: commands.Context) -> None:
         """Configure moderator action rate limits."""
 
     @ratelimit.command(name="show")
+    @commands.bot_has_permissions(embed_links=True)
     async def ratelimit_show(self, ctx: commands.Context) -> None:
         """Show configured action rate limits."""
         limits = await self.config.guild(ctx.guild).action_rate_limits()
-        embed = discord.Embed(title="⏱️ VMod Rate Limits", color=discord.Color.blurple())
+        embed = discord.Embed(title=_("⏱️ VMod Rate Limits"), color=discord.Color.blurple())
         for action_key, data in limits.items():
+            count = data['limit']
             embed.add_field(
                 name=f"`{action_key}`",
-                value=f"{data['limit']} action{'s' if data['limit'] != 1 else ''} per {humanize_timedelta(seconds=int(data['window']))}",
+                value=_("{count} action per {window}" if count == 1 else "{count} actions per {window}").format(
+                    count=count,
+                    window=humanize_timedelta(seconds=int(data["window"])),
+                ),
                 inline=True,
             )
         await ctx.send(embed=embed)

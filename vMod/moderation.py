@@ -20,6 +20,8 @@ from .constants import _
 MOD_COLOR = discord.Color.from_rgb(237, 66, 69)   # red for punitive actions
 INFO_COLOR = discord.Color.from_rgb(88, 101, 242)  # blurple for info
 
+_MAX_FIELD = 950  # leave breathing room below Discord's 1024-char field limit
+
 
 def _mod_embed(title: str, description: str = "", *, color: discord.Color = MOD_COLOR) -> discord.Embed:
     """Build a base moderation action embed."""
@@ -28,11 +30,29 @@ def _mod_embed(title: str, description: str = "", *, color: discord.Color = MOD_
     return embed
 
 
+def _format_id_list(ids: list[str]) -> str:
+    """Join IDs as backtick-wrapped values, truncating with a count if the result would exceed the embed field limit."""
+    entries = [f"`{uid}`" for uid in ids]
+    result = ", ".join(entries)
+    if len(result) <= _MAX_FIELD:
+        return result
+    shown: list[str] = []
+    for entry in entries:
+        candidate = ", ".join(shown + [entry])
+        remaining = len(ids) - len(shown)
+        suffix = _(", …and {count} more").format(count=remaining)
+        if len(candidate) + len(suffix) > _MAX_FIELD:
+            return (", ".join(shown) + suffix) if shown else _("…{count} IDs").format(count=remaining)
+        shown.append(entry)
+    return ", ".join(shown)
+
+
 class VModModeration(VModBase):
     """Moderation commands and informational member utilities."""
 
     @commands.command()
     @commands.guild_only()
+    @commands.bot_has_permissions(embed_links=True)
     async def slowmode(
         self,
         ctx: commands.Context,
@@ -48,18 +68,15 @@ class VModModeration(VModBase):
             await ctx.channel.edit(slowmode_delay=int(interval.total_seconds()))
             if interval.total_seconds() > 0:
                 readable = humanize_timedelta(timedelta=interval)
-                embed = _mod_embed(
-                    "🐢 Slowmode Enabled",
-                    color=INFO_COLOR,
-                )
-                embed.add_field(name="Channel", value=ctx.channel.mention, inline=True)
-                embed.add_field(name="Interval", value=readable, inline=True)
-                embed.set_footer(text=f"Set by {ctx.author}")
+                embed = _mod_embed(_("🐢 Slowmode Enabled"), color=INFO_COLOR)
+                embed.add_field(name=_("Channel"), value=ctx.channel.mention, inline=True)
+                embed.add_field(name=_("Interval"), value=readable, inline=True)
+                embed.set_footer(text=_("Set by {moderator}").format(moderator=ctx.author))
                 await ctx.send(embed=embed)
             else:
-                embed = _mod_embed("🚀 Slowmode Disabled", color=INFO_COLOR)
-                embed.add_field(name="Channel", value=ctx.channel.mention, inline=True)
-                embed.set_footer(text=f"Set by {ctx.author}")
+                embed = _mod_embed(_("🚀 Slowmode Disabled"), color=INFO_COLOR)
+                embed.add_field(name=_("Channel"), value=ctx.channel.mention, inline=True)
+                embed.set_footer(text=_("Set by {moderator}").format(moderator=ctx.author))
                 await ctx.send(embed=embed)
             await self.send_modlog_note(
                 ctx.guild,
@@ -75,7 +92,7 @@ class VModModeration(VModBase):
 
     @commands.command()
     @commands.guild_only()
-    @commands.bot_has_permissions(manage_nicknames=True)
+    @commands.bot_has_permissions(manage_nicknames=True, embed_links=True)
     @checks.admin_or_permissions(manage_nicknames=True)
     async def rename(
         self, ctx: commands.Context, user: discord.Member, *, nickname: str = ""
@@ -93,7 +110,7 @@ class VModModeration(VModBase):
         ):
             await ctx.send(_("I do not have permission to rename that member."))
             return
-        old_nick = user.display_name
+        old_nick = user.nick
         try:
             await user.edit(nick=nickname, reason=get_audit_reason(ctx.author, None))
         except discord.Forbidden:
@@ -101,11 +118,11 @@ class VModModeration(VModBase):
         except discord.HTTPException:
             await ctx.send(_("That nickname is invalid or Discord rejected the request."))
         else:
-            embed = _mod_embed("✏️ Nickname Changed", color=INFO_COLOR)
-            embed.add_field(name="Member", value=user.mention, inline=True)
-            embed.add_field(name="Before", value=old_nick or "None", inline=True)
-            embed.add_field(name="After", value=nickname or "*(cleared)*", inline=True)
-            embed.set_footer(text=f"Changed by {ctx.author}")
+            embed = _mod_embed(_("✏️ Nickname Changed"), color=INFO_COLOR)
+            embed.add_field(name=_("Member"), value=user.mention, inline=True)
+            embed.add_field(name=_("Before"), value=old_nick or _("*(none)*"), inline=True)
+            embed.add_field(name=_("After"), value=nickname or _("*(cleared)*"), inline=True)
+            embed.set_footer(text=_("Changed by {moderator}").format(moderator=ctx.author))
             await ctx.send(embed=embed)
             await self.send_modlog_note(
                 ctx.guild,
@@ -133,27 +150,28 @@ class VModModeration(VModBase):
         )
         embed.set_author(name=str(user), icon_url=user.display_avatar.url)
         embed.set_thumbnail(url=user.display_avatar.url)
-        embed.add_field(name="🗓️ Joined Discord", value=f"<t:{int(user.created_at.timestamp())}:D>", inline=True)
-        embed.add_field(name="📥 Joined Server", value=f"<t:{int(joined_at.timestamp())}:D>", inline=True)
-        embed.add_field(name="🆔 User ID", value=f"`{user.id}`", inline=True)
+        embed.add_field(name=_("🗓️ Joined Discord"), value=f"<t:{int(user.created_at.timestamp())}:D>", inline=True)
+        embed.add_field(name=_("📥 Joined Server"), value=f"<t:{int(joined_at.timestamp())}:D>", inline=True)
+        embed.add_field(name=_("🆔 User ID"), value=f"`{user.id}`", inline=True)
         if roles:
             role_text = ", ".join(role.mention for role in roles)
             if len(role_text) > 1024:
                 role_text = role_text[:1000] + "..."
-            embed.add_field(name=f"🎭 Roles ({len(roles)})", value=role_text, inline=False)
+            embed.add_field(name=_("🎭 Roles ({count})").format(count=len(roles)), value=role_text, inline=False)
         if names:
             safe_names = [escape_spoilers_and_mass_mentions(name) for name in names]
-            embed.add_field(name="📝 Past usernames", value=", ".join(safe_names), inline=False)
+            embed.add_field(name=_("📝 Past usernames"), value=", ".join(safe_names), inline=False)
         if nicks:
             safe_nicks = [escape_spoilers_and_mass_mentions(name) for name in nicks]
-            embed.add_field(name="🏷️ Past nicknames", value=", ".join(safe_nicks), inline=False)
+            embed.add_field(name=_("🏷️ Past nicknames"), value=", ".join(safe_nicks), inline=False)
         if not names and not nicks:
-            embed.set_footer(text="No recorded name history for this user.")
+            embed.set_footer(text=_("No recorded name history for this user."))
         await ctx.send(embed=embed)
 
 
     @commands.command()
     @commands.guild_only()
+    @commands.bot_has_permissions(embed_links=True)
     async def kick(
         self, ctx: commands.Context, member: discord.Member, *, reason: str | None = None
     ) -> None:
@@ -176,15 +194,16 @@ class VModModeration(VModBase):
             moderator=ctx.author,
             reason=reason,
         )
-        embed = _mod_embed("👢 Member Kicked")
-        embed.add_field(name="Member", value=f"{member} (`{member.id}`)", inline=False)
-        embed.add_field(name="Reason", value=reason or "No reason provided.", inline=False)
-        embed.set_footer(text=f"Kicked by {ctx.author}")
+        embed = _mod_embed(_("👢 Member Kicked"))
+        embed.add_field(name=_("Member"), value=f"{member} (`{member.id}`)", inline=False)
+        embed.add_field(name=_("Reason"), value=reason or _("No reason provided."), inline=False)
+        embed.set_footer(text=_("Kicked by {moderator}").format(moderator=ctx.author))
         embed.set_thumbnail(url=member.display_avatar.url)
         await ctx.send(embed=embed)
 
     @commands.command()
     @commands.guild_only()
+    @commands.bot_has_permissions(embed_links=True)
     async def ban(
         self,
         ctx: commands.Context,
@@ -231,17 +250,22 @@ class VModModeration(VModBase):
             moderator=ctx.author,
             reason=reason,
         )
-        embed = _mod_embed("🔨 Member Banned")
-        embed.add_field(name="User", value=f"{member} (`{member.id}`)", inline=False)
-        embed.add_field(name="Reason", value=reason or "No reason provided.", inline=False)
+        embed = _mod_embed(_("🔨 Member Banned"))
+        embed.add_field(name=_("User"), value=f"{member} (`{member.id}`)", inline=False)
+        embed.add_field(name=_("Reason"), value=reason or _("No reason provided."), inline=False)
         if days:
-            embed.add_field(name="Messages deleted", value=f"Last {days} day{'s' if days != 1 else ''}", inline=True)
-        embed.set_footer(text=f"Banned by {ctx.author}")
+            embed.add_field(
+                name=_("Messages deleted"),
+                value=_("Last {days} day").format(days=days) if days == 1 else _("Last {days} days").format(days=days),
+                inline=True,
+            )
+        embed.set_footer(text=_("Banned by {moderator}").format(moderator=ctx.author))
         embed.set_thumbnail(url=member.display_avatar.url)
         await ctx.send(embed=embed)
 
     @commands.command()
     @commands.guild_only()
+    @commands.bot_has_permissions(embed_links=True)
     async def softban(
         self, ctx: commands.Context, member: discord.Member, *, reason: str | None = None
     ) -> None:
@@ -268,16 +292,17 @@ class VModModeration(VModBase):
             moderator=ctx.author,
             reason=reason,
         )
-        embed = _mod_embed("💨 Member Softbanned")
-        embed.add_field(name="Member", value=f"{member} (`{member.id}`)", inline=False)
-        embed.add_field(name="Reason", value=reason or "No reason provided.", inline=False)
-        embed.add_field(name="ℹ️ Note", value="Banned and immediately unbanned — recent messages cleared.", inline=False)
-        embed.set_footer(text=f"Softbanned by {ctx.author}")
+        embed = _mod_embed(_("💨 Member Softbanned"))
+        embed.add_field(name=_("Member"), value=f"{member} (`{member.id}`)", inline=False)
+        embed.add_field(name=_("Reason"), value=reason or _("No reason provided."), inline=False)
+        embed.add_field(name=_("ℹ️ Note"), value=_("Banned and immediately unbanned — recent messages cleared."), inline=False)
+        embed.set_footer(text=_("Softbanned by {moderator}").format(moderator=ctx.author))
         embed.set_thumbnail(url=member.display_avatar.url)
         await ctx.send(embed=embed)
 
     @commands.command()
     @commands.guild_only()
+    @commands.bot_has_permissions(embed_links=True)
     async def tempban(
         self,
         ctx: commands.Context,
@@ -326,17 +351,18 @@ class VModModeration(VModBase):
             reason=reason,
             until=expiry,
         )
-        embed = _mod_embed("⏳ Member Temporarily Banned")
-        embed.add_field(name="User", value=f"{member} (`{member.id}`)", inline=False)
-        embed.add_field(name="Duration", value=humanize_timedelta(timedelta=duration), inline=True)
-        embed.add_field(name="Expires", value=f"<t:{int(expiry.timestamp())}:F>", inline=True)
-        embed.add_field(name="Reason", value=reason or "No reason provided.", inline=False)
-        embed.set_footer(text=f"Tempbanned by {ctx.author}")
+        embed = _mod_embed(_("⏳ Member Temporarily Banned"))
+        embed.add_field(name=_("User"), value=f"{member} (`{member.id}`)", inline=False)
+        embed.add_field(name=_("Duration"), value=humanize_timedelta(timedelta=duration), inline=True)
+        embed.add_field(name=_("Expires"), value=f"<t:{int(expiry.timestamp())}:F>", inline=True)
+        embed.add_field(name=_("Reason"), value=reason or _("No reason provided."), inline=False)
+        embed.set_footer(text=_("Tempbanned by {moderator}").format(moderator=ctx.author))
         embed.set_thumbnail(url=member.display_avatar.url)
         await ctx.send(embed=embed)
 
     @commands.command()
     @commands.guild_only()
+    @commands.bot_has_permissions(embed_links=True)
     async def unban(
         self, ctx: commands.Context, user_id: RawUserIds, *, reason: str | None = None
     ) -> None:
@@ -363,10 +389,10 @@ class VModModeration(VModBase):
             reason=reason,
         )
 
-        embed = _mod_embed("✅ User Unbanned", color=discord.Color.green())
-        embed.add_field(name="User ID", value=f"`{user_id}`", inline=True)
-        embed.add_field(name="Reason", value=reason or "No reason provided.", inline=False)
-        embed.set_footer(text=f"Unbanned by {ctx.author}")
+        embed = _mod_embed(_("✅ User Unbanned"), color=discord.Color.green())
+        embed.add_field(name=_("User ID"), value=f"`{user_id}`", inline=True)
+        embed.add_field(name=_("Reason"), value=reason or _("No reason provided."), inline=False)
+        embed.set_footer(text=_("Unbanned by {moderator}").format(moderator=ctx.author))
 
         if await self.config.guild(ctx.guild).reinvite_on_unban():
             invite = await self.get_invite_for_reinvite(ctx)
@@ -383,12 +409,13 @@ class VModModeration(VModBase):
                                 invite=invite.url,
                             )
                         )
-                    embed.add_field(name="📨 Reinvite", value="A fresh invite was sent to the user.", inline=False)
+                    embed.add_field(name=_("📨 Reinvite"), value=_("A fresh invite was sent to the user."), inline=False)
 
         await ctx.send(embed=embed)
 
     @commands.command()
     @commands.guild_only()
+    @commands.bot_has_permissions(embed_links=True)
     async def massban(
         self, ctx: commands.Context, user_ids: Greedy[RawUserIds], *, reason: str | None = None
     ) -> None:
@@ -399,6 +426,7 @@ class VModModeration(VModBase):
             await ctx.send(_("Provide one or more user IDs to ban."))
             return
 
+        display_reason = reason or _("Massban")
         banned: list[str] = []
         failed: list[str] = []
         for user_id in user_ids:
@@ -420,25 +448,27 @@ class VModModeration(VModBase):
                 action_type="ban",
                 user=target,
                 moderator=ctx.author,
-                reason=reason or _("Massban"),
+                reason=display_reason,
             )
 
         embed = _mod_embed(
-            f"🔨 Mass Ban — {len(banned)} banned, {len(failed)} failed",
+            _("🔨 Mass Ban — {banned} banned, {failed} failed").format(
+                banned=len(banned), failed=len(failed)
+            ),
             color=MOD_COLOR if not failed else discord.Color.orange(),
         )
         if banned:
             embed.add_field(
-                name=f"✅ Banned ({len(banned)})",
-                value=", ".join(f"`{uid}`" for uid in banned) or "None",
+                name=_("✅ Banned ({count})").format(count=len(banned)),
+                value=_format_id_list(banned),
                 inline=False,
             )
         if failed:
             embed.add_field(
-                name=f"❌ Failed ({len(failed)})",
-                value=", ".join(f"`{uid}`" for uid in failed) or "None",
+                name=_("❌ Failed ({count})").format(count=len(failed)),
+                value=_format_id_list(failed),
                 inline=False,
             )
-        embed.add_field(name="Reason", value=reason or "No reason provided.", inline=False)
-        embed.set_footer(text=f"Massbanned by {ctx.author}")
+        embed.add_field(name=_("Reason"), value=display_reason, inline=False)
+        embed.set_footer(text=_("Massbanned by {moderator}").format(moderator=ctx.author))
         await ctx.send(embed=embed)
