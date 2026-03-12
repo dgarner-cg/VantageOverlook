@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import discord
 
 from .models import ErrorKind, InternalErrorRecord

@@ -131,9 +131,9 @@ class VModBase(commands.Cog):
             return
 
         log.exception("Internal VMod error in %s", ctx.command, exc_info=original)
-        cmd_display = f"{ctx.clean_prefix}{ctx.command.qualified_name}" if ctx.command else "that command"
+        cmd_display = f"{ctx.clean_prefix}{ctx.command.qualified_name}" if ctx.command else _("that command")
         try:
-            await ctx.send(f"Something went wrong while running **{cmd_display}**. Please try again.")
+            await ctx.send(_("Something went wrong while running **{cmd_display}**. Please try again.").format(cmd_display=cmd_display))
         except discord.HTTPException:
             pass
 

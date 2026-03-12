@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import binascii
-import re
 from typing import Optional
 
 import discord
 from redbot.core import commands
 
-from .registry import DEFAULT_FAMILIES, ISSUE_DEFINITIONS, PublicErrorInfo, grouped_public_errors, make_public_code
+from .registry import DEFAULT_FAMILIES, ISSUE_DEFINITIONS, PublicErrorInfo, make_public_code
 
 SEPARATOR = "─" * 16
 
